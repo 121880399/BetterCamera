@@ -1,4 +1,4 @@
-package org.zzy.lib.bettercamera.manager;
+package org.zzy.lib.bettercamera.manager.impl;
 
 import android.content.Context;
 import android.hardware.Camera;
@@ -19,6 +19,7 @@ import org.zzy.lib.bettercamera.listener.CameraOpenListener;
 import org.zzy.lib.bettercamera.listener.CameraPhotoListener;
 import org.zzy.lib.bettercamera.listener.CameraSizeListener;
 import org.zzy.lib.bettercamera.listener.CameraVideoListener;
+import org.zzy.lib.bettercamera.manager.CameraManager;
 import org.zzy.lib.bettercamera.preview.CameraPreview;
 import org.zzy.lib.bettercamera.utils.Logger;
 
@@ -31,7 +32,7 @@ import java.util.List;
  * @作者 ZhouZhengyi
  * @创建日期 2019/6/4
  */
-public abstract class BaseCameraManager implements  CameraManager,MediaRecorder.OnInfoListener {
+public abstract class BaseCameraManager<T> implements CameraManager,MediaRecorder.OnInfoListener {
 
     private static final String TAG = "BaseCameraManager";
 
@@ -168,6 +169,25 @@ public abstract class BaseCameraManager implements  CameraManager,MediaRecorder.
      */
     MediaRecorder videoRecorder;
 
+    /**
+     * 有几个摄像头
+     */
+    int numberOfCameras;
+
+    /**
+     * 一台设备有多个摄像头，后置摄像头是第几个
+     */
+    T rearCameraId;
+
+    /**
+     * 一台设备有多个摄像头，前置摄像头是第几个
+     */
+    T frontCameraId;
+
+    /**
+     * 当前使用的是第几个摄像头
+     */
+    T currentCameraId;
 
     BaseCameraManager(CameraPreview cameraPreview) {
         this.cameraPreview = cameraPreview;

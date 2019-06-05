@@ -7,7 +7,7 @@ import android.view.SurfaceHolder;
 import android.view.View;
 
 import org.zzy.lib.bettercamera.bean.Size;
-import org.zzy.lib.bettercamera.constant.Preview;
+import org.zzy.lib.bettercamera.constant.PreviewConstant;
 
 /**
  * @作者 ZhouZhengyi
@@ -29,7 +29,7 @@ public interface CameraPreview {
     /**
      * 得到预览类型
      */
-    @Preview.Type
+    @PreviewConstant.Type
     int getPreviewType();
 
     /**

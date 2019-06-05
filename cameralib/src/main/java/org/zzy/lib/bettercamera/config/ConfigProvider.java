@@ -261,6 +261,9 @@ public class ConfigProvider {
         isDebug = debug;
     }
 
+    /**
+     * 得到相机支持的预览，照片，视频尺寸，并转换成我们自己定义的Size
+     */
     public List<Size> getSizes(android.hardware.Camera camera, @CameraConstant.Face int cameraFace, @CameraConstant.SizeFor int
             sizeFor) {
         int hash = cameraFace | sizeFor | CameraConstant.TYPE_CAMERA1;
@@ -320,6 +323,9 @@ public class ConfigProvider {
     }
 
 
+    /**
+     * 得到相机支持的缩放比列
+     */
     public List<Float> getZoomRatios(android.hardware.Camera camera, @CameraConstant.Face int cameraFace) {
         int hash = cameraFace | CameraConstant.TYPE_CAMERA1;
         if (useCache) {
