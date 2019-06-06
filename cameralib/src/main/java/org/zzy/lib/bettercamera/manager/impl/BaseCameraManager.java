@@ -2,6 +2,7 @@ package org.zzy.lib.bettercamera.manager.impl;
 
 import android.content.Context;
 import android.hardware.Camera;
+import android.media.CamcorderProfile;
 import android.media.MediaRecorder;
 import android.os.Build;
 import android.os.Handler;
@@ -188,6 +189,11 @@ public abstract class BaseCameraManager<T> implements CameraManager,MediaRecorde
      * 当前使用的是第几个摄像头
      */
     T currentCameraId;
+
+    /**
+     * 设置camera录制的参数
+     */
+    CamcorderProfile camcorderProfile;
 
     BaseCameraManager(CameraPreview cameraPreview) {
         this.cameraPreview = cameraPreview;

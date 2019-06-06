@@ -3,12 +3,16 @@ package org.zzy.lib.bettercamera.manager.impl;
 import android.content.Context;
 import android.hardware.Camera;
 import android.hardware.Camera.CameraInfo;
+import android.hardware.Camera.Parameters;
+
+import com.sun.org.apache.bcel.internal.generic.RETURN;
 
 import org.zzy.lib.bettercamera.bean.Size;
 import org.zzy.lib.bettercamera.bean.SizeMap;
 import org.zzy.lib.bettercamera.config.ConfigProvider;
 import org.zzy.lib.bettercamera.config.calculator.CameraSizeCalculator;
 import org.zzy.lib.bettercamera.constant.CameraConstant;
+import org.zzy.lib.bettercamera.constant.MediaConstant;
 import org.zzy.lib.bettercamera.constant.PreviewConstant;
 import org.zzy.lib.bettercamera.listener.CameraOpenListener;
 import org.zzy.lib.bettercamera.listener.CameraVideoListener;
@@ -129,7 +133,7 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
                     //打开相机,得到相机实例
                     camera = Camera.open(currentCameraId);
                     getCameraSizesInfo();
-                    adjustCameraParameters();
+                    adjustCameraParameters(false,true,true);
                 }catch (Exception e){
                     Logger.e(TAG, "error : " + e);
                     notifyCameraOpenError(e);
@@ -156,11 +160,91 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
         }
     }
 
-    private void adjustCameraParameters(boolean foreceCalculateSizes,boolean changeFocusMode,boolean changeFlashMode){
+    /**
+     * 设置Camera的pictureSize
+     * 设置Camera的previewSize
+     * @param forceCalculateSizes 是否强制计算
+     * @param changeFocusMode 是否改变对焦模式
+     * @param changeFlashMode 是否改变闪光灯模式
+     */
+    private void adjustCameraParameters(boolean forceCalculateSizes,boolean changeFocusMode,boolean changeFlashMode){
         Size oldPreview = previewSize;
         long start = System.currentTimeMillis();
         CameraSizeCalculator cameraSizeCalculator = ConfigProvider.getInstance().getCameraSizeCalculator();
         Camera.Parameters parameters = camera.getParameters();
+        //如果是照片，并且照片的尺寸为空，或者照片尺寸不为空强制计算尺寸
+        if(mediaType == MediaConstant.TYPE_PICTURE && (pictureSize == null || forceCalculateSizes)){
+            pictureSize = cameraSizeCalculator.getPictureSize(pictureSizes,expectAspectRatio,expectPictureSize);
+            previewSize = cameraSizeCalculator.getPicturePreviewSize(previewSizes,pictureSize);
+            parameters.setPictureSize(pictureSize.width,pictureSize.height);
+            notifyPictureSizeUpdated(pictureSize);
+        }else if(mediaType == MediaConstant.TYPE_VIDEO){
+            if(camcorderProfile == null || forceCalculateSizes) {
+                camcorderProfile = CameraHelper.getCamcorderProfile(mediaQuality, currentCameraId);
+            }
+            if(videoSize == null || forceCalculateSizes){
+                videoSize = cameraSizeCalculator.getVideoSize(videoSizes, expectAspectRatio, expectPictureSize);
+                previewSize = cameraSizeCalculator.getVideoPreviewSize(previewSizes, videoSize);
+                notifyVideoSizeUpdated(previewSize);
+            }
+        }
+        if(!previewSize.equals(oldPreview)){
+            parameters.setPreviewSize(previewSize.width,previewSize.height);
+            notifyPreviewSizeUpdated(previewSize);
+        }
+        Logger.d(TAG, "adjustCameraParameters size cost : " + (System.currentTimeMillis() - start) + " ms");
+
+        start = System.currentTimeMillis();
+        if(changeFocusMode){
+            setFocusModeInternal(parameters);
+        }
+        Logger.d(TAG, "adjustCameraParameters focus cost : " + (System.currentTimeMillis() - start) + " ms");
+        start = System.currentTimeMillis();
+        if(changeFlashMode){
+            setFlashModeInternal(parameters);
+        }
+        Logger.d(TAG, "adjustCameraParameters flash cost : " + (System.currentTimeMillis() - start) + " ms");
+
+        start = System.currentTimeMillis();
+        setZoomInternal(parameters);
+        Logger.d(TAG, "adjustCameraParameters zoom cost : " + (System.currentTimeMillis() - start) + " ms");
+
+        start = System.currentTimeMillis();
+        if(showingPreview){
+         camera.stopPreview();
+         showingPreview = false;
+        }
+        camera.setParameters(parameters);
+        if(!showingPreview){
+            showingPreview = true;
+            camera.startPreview();
+        }
+        Logger.d(TAG, "adjustCameraParameters restart preview cost : " + (System.currentTimeMillis() - start) + " ms");
+    }
+
+    private void setFocusModeInternal(Camera.Parameters parameters){
+        boolean isNullParametes = parameters == null;
+        parameters = isNullParametes ? camera.getParameters() : parameters;
+        if(mediaType == MediaConstant.TYPE_VIDEO){
+            if(!turnVideoCameraFeaturesOn(parameters)) {
+                setAutoFocusInternal(parameters);
+            }
+        }else if(mediaType == MediaConstant.TYPE_PICTURE){
+            if(!turnPhotoCameraFeaturesOn(parameters)) {
+                setAutoFocusInternal(parameters);
+            }
+        }
+        if(isNullParametes){
+            camera.setParameters(parameters);
+        }
+    }
+
+    private boolean turnPhotoCameraFeaturesOn(Camera.Parameters parameters){
+        if(parameters.getSupportedFocusModes().contains(Parameters.FOCUS_MODE_CONTINUOUS_PICTURE)){
+            parameters.setFocusMode(Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
+            return true;
+        }
+        return false;
     }
 
     @Override
