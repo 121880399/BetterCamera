@@ -4,6 +4,8 @@ import android.content.Context;
 import android.hardware.Camera;
 import android.hardware.Camera.CameraInfo;
 import android.hardware.Camera.Parameters;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 
 import com.sun.org.apache.bcel.internal.generic.RETURN;
 
@@ -48,7 +50,7 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
      */
     private List<Float> zoomRatios;
 
-    Camera1Manager(CameraPreview cameraPreview) {
+    public Camera1Manager(CameraPreview cameraPreview) {
         super(cameraPreview);
         cameraPreview.setCameraPreviewCallback(new CameraPreviewCallback() {
             @Override
@@ -66,22 +68,22 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
      */
     private void setupPreview(){
         try {
+            //如果正在显示预览，先停止
+            if (showingPreview) {
+                camera.stopPreview();
+                showingPreview = false;
+            }
             //如果创建的是SurfaceView，给Camera设置相应的view
             if (cameraPreview.getPreviewType() == PreviewConstant.SURFACE_VIEW) {
-                //如果正在显示预览，先停止
-                if (showingPreview) {
-                    camera.stopPreview();
-                    showingPreview = false;
-                }
                 //为camera设置预览
                 camera.setPreviewDisplay(cameraPreview.getSurfaceHolder());
-                if(!showingPreview){
-                    //camera启动预览
-                    camera.startPreview();
-                    showingPreview = true;
-                }
             }else{
                 camera.setPreviewTexture(cameraPreview.getSurfaceTexture());
+            }
+            if(!showingPreview){
+                //camera启动预览
+                camera.startPreview();
+                showingPreview = true;
             }
             camera.setDisplayOrientation(CameraHelper.calDisplayOrientation(context,cameraFace,
                     cameraFace == CameraConstant.FACE_FRONT ? frontCameraOrientation : rearCameraOrientation));
@@ -132,8 +134,16 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
                 try{
                     //打开相机,得到相机实例
                     camera = Camera.open(currentCameraId);
+                    //得到相机支持尺寸信息
                     getCameraSizesInfo();
+                    //调整相机参数
                     adjustCameraParameters(false,true,true);
+                    if(cameraPreview.isAvailable()){
+                        setupPreview();
+                        notifyCameraOpened();
+                    }else {
+                        throw new Exception("CameraPreview width or height  <= 0");
+                    }
                 }catch (Exception e){
                     Logger.e(TAG, "error : " + e);
                     notifyCameraOpenError(e);
@@ -226,12 +236,12 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
         boolean isNullParametes = parameters == null;
         parameters = isNullParametes ? camera.getParameters() : parameters;
         if(mediaType == MediaConstant.TYPE_VIDEO){
-            if(!turnVideoCameraFeaturesOn(parameters)) {
-                setAutoFocusInternal(parameters);
+            if(!isVideoContinuousFocusMode(parameters)) {
+                setAutoFocusMode(parameters);
             }
         }else if(mediaType == MediaConstant.TYPE_PICTURE){
-            if(!turnPhotoCameraFeaturesOn(parameters)) {
-                setAutoFocusInternal(parameters);
+            if(!isPictureContinuousFocusMode(parameters)) {
+                setAutoFocusMode(parameters);
             }
         }
         if(isNullParametes){
@@ -239,7 +249,10 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
         }
     }
 
-    private boolean turnPhotoCameraFeaturesOn(Camera.Parameters parameters){
+    /**
+     * 照片是否支持连续自动对焦模式
+     */
+    private boolean isPictureContinuousFocusMode(Camera.Parameters parameters){
         if(parameters.getSupportedFocusModes().contains(Parameters.FOCUS_MODE_CONTINUOUS_PICTURE)){
             parameters.setFocusMode(Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
             return true;
@@ -247,9 +260,98 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
         return false;
     }
 
+    /**
+     * 视频是否支持连续自动对焦模式
+     */
+    private boolean isVideoContinuousFocusMode(@NonNull android.hardware.Camera.Parameters parameters) {
+        if (parameters.getSupportedFocusModes().contains(
+                android.hardware.Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO)) {
+            parameters.setFocusMode(android.hardware.Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 设置相机的对焦模式
+     */
+    private void setAutoFocusMode(@NonNull android.hardware.Camera.Parameters parameters) {
+        try {
+            final List<String> modes = parameters.getSupportedFocusModes();
+            if (isAutoFocus && modes.contains(android.hardware.Camera.Parameters.FOCUS_MODE_AUTO)) {
+                parameters.setFocusMode(android.hardware.Camera.Parameters.FOCUS_MODE_AUTO);
+            } else if (modes.contains(android.hardware.Camera.Parameters.FOCUS_MODE_FIXED)) {
+                parameters.setFocusMode(android.hardware.Camera.Parameters.FOCUS_MODE_FIXED);
+            } else if (modes.contains(android.hardware.Camera.Parameters.FOCUS_MODE_INFINITY)) {
+                parameters.setFocusMode(android.hardware.Camera.Parameters.FOCUS_MODE_INFINITY);
+            } else {
+                parameters.setFocusMode(modes.get(0));
+            }
+        } catch (Exception ex) {
+            Logger.e(TAG, "setAutoFocusInternal " + ex);
+        }
+    }
+
+    /**
+     * 设置闪光灯模式
+     */
+    private void setFlashModeInternal(@Nullable android.hardware.Camera.Parameters parameters) {
+        boolean nullParameters = parameters == null;
+        parameters = nullParameters ? camera.getParameters() : parameters;
+        List<String> modes = parameters.getSupportedFlashModes();
+        try {
+            switch (flashMode) {
+                case CameraConstant.FLASH_ON:
+                    setFlashModeOrAuto(parameters, modes, android.hardware.Camera.Parameters.FLASH_MODE_ON);
+                    break;
+                case CameraConstant.FLASH_OFF:
+                    setFlashModeOrAuto(parameters, modes, android.hardware.Camera.Parameters.FLASH_MODE_OFF);
+                    break;
+                case CameraConstant.FLASH_AUTO:
+                default:
+                    if (modes.contains(android.hardware.Camera.Parameters.FLASH_MODE_AUTO)) {
+                        parameters.setFlashMode(android.hardware.Camera.Parameters.FLASH_MODE_AUTO);
+                    }
+                    break;
+            }
+            if (nullParameters) {
+                camera.setParameters(parameters);
+            }
+        } catch (Exception ex) {
+            Logger.e(TAG, "setFlashModeInternal : " + ex);
+        }
+    }
+
+
+    private void setFlashModeOrAuto(android.hardware.Camera.Parameters parameters, List<String> supportModes, String mode) {
+        if (supportModes.contains(mode)) {
+            parameters.setFlashMode(mode);
+        } else {
+            if (supportModes.contains(android.hardware.Camera.Parameters.FLASH_MODE_AUTO)) {
+                parameters.setFlashMode(android.hardware.Camera.Parameters.FLASH_MODE_AUTO);
+            }
+        }
+    }
+
+    /**
+     * 设置缩放比例
+     */
+    private void setZoomInternal(@Nullable android.hardware.Camera.Parameters parameters) {
+        boolean nullParameters = parameters == null;
+        parameters = nullParameters ? camera.getParameters() : parameters;
+        if (parameters.isZoomSupported()) {
+            List<Integer> zoomRatios = parameters.getZoomRatios();
+            int zoomIdx = CameraHelper.getZoomIdxForZoomFactor(zoomRatios, zoom);
+            parameters.setZoom(zoomRatios.get(zoomIdx));
+            if (nullParameters) {
+                camera.setParameters(parameters);
+            }
+        }
+    }
+
     @Override
     public boolean isCameraOpened() {
-        return false;
+        return camera != null;
     }
 
     @Override

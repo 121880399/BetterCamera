@@ -276,6 +276,12 @@ public final class CameraHelper {
         }
     }
 
+    /**
+     * 得到系统支持的缩放比例与用户设置的缩放比例最接近的
+     * @param zoomRatios 系统支持的缩放比例
+     * @param zoom 用户设置的缩放比例
+     * @return 最接近用户缩放比的位置
+     */
     public static int getZoomIdxForZoomFactor(List<Integer> zoomRatios, float zoom) {
         int zoomRatioFormat = (int) (zoom * 100);
 

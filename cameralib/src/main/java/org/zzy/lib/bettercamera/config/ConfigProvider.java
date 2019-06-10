@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
+ * 初始化相机的默认值，用户可以通过这个类来配置想要的相机参数
  * @作者 ZhouZhengyi
  * @创建日期 2019/6/4
  */
