@@ -87,7 +87,7 @@ public interface CameraManager {
     int getFlashMode();
 
     /**
-     * 设置缩放大小
+     * 设置变焦
      */
     void setZoom(float zoom);
 
@@ -97,7 +97,7 @@ public interface CameraManager {
     float getZoom();
 
     /**
-     * 得到最大缩放
+     * 得到最大变焦
      */
     float getMaxZoom();
 
@@ -167,9 +167,9 @@ public interface CameraManager {
     void stopVideoRecord();
 
     /**
-     * 开始预览
+     * 恢复预览
      */
-    void startPreview();
+    void resumePreview();
 
     /**
      * 关闭相机

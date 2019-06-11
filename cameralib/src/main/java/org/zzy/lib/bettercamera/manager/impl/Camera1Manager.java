@@ -4,6 +4,9 @@ import android.content.Context;
 import android.hardware.Camera;
 import android.hardware.Camera.CameraInfo;
 import android.hardware.Camera.Parameters;
+import android.media.MediaRecorder;
+import android.media.MediaRecorder.AudioSource;
+import android.media.MediaRecorder.VideoSource;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 
@@ -16,6 +19,7 @@ import org.zzy.lib.bettercamera.config.calculator.CameraSizeCalculator;
 import org.zzy.lib.bettercamera.constant.CameraConstant;
 import org.zzy.lib.bettercamera.constant.MediaConstant;
 import org.zzy.lib.bettercamera.constant.PreviewConstant;
+import org.zzy.lib.bettercamera.listener.CameraCloseListener;
 import org.zzy.lib.bettercamera.listener.CameraOpenListener;
 import org.zzy.lib.bettercamera.listener.CameraVideoListener;
 import org.zzy.lib.bettercamera.preview.CameraPreview;
@@ -46,7 +50,7 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
     private volatile boolean showingPreview;
 
     /**
-     * 缩放比例
+     * 变焦比例
      */
     private List<Float> zoomRatios;
 
@@ -154,7 +158,7 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
     }
 
     /**
-     * 得到相机支持的尺寸和缩放比
+     * 得到相机支持的尺寸和变焦比例
      */
     private void getCameraSizesInfo(){
         try{
@@ -334,7 +338,7 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
     }
 
     /**
-     * 设置缩放比例
+     * 设置变焦比例
      */
     private void setZoomInternal(@Nullable android.hardware.Camera.Parameters parameters) {
         boolean nullParameters = parameters == null;
@@ -354,83 +358,301 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
         return camera != null;
     }
 
-    @Override
-    public void setMediaType(int mediaType) {
 
+    @Override
+    public void setMediaType(@MediaConstant.Type int mediaType) {
+        Logger.d(TAG, "setMediaType : " + mediaType + " with mediaType " + this.mediaType);
+        if (this.mediaType == mediaType) {
+            return;
+        }
+        this.mediaType = mediaType;
+        if (isCameraOpened()) {
+            backgroundHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        //重新设置媒体类型以后，要重新调整相机参数
+                        adjustCameraParameters(true, false, false);
+                    } catch (Exception ex) {
+                        Logger.e(TAG, "setMediaType : " + ex);
+                    }
+                }
+            });
+        }
     }
 
     @Override
     public void setVoiceEnable(boolean voiceEnable) {
-
+        if (voiceEnabled == voiceEnable) {
+            return;
+        }
+        this.voiceEnabled = voiceEnable;
     }
 
     @Override
     public boolean isVoiceEnable() {
-        return false;
+        return voiceEnabled;
     }
 
     @Override
     public void setAutoFocus(boolean autoFocus) {
-
+        if (this.isAutoFocus == autoFocus) {
+            return;
+        }
+        this.isAutoFocus = autoFocus;
+        if (isCameraOpened()) {
+            backgroundHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    setFocusModeInternal(null);
+                }
+            });
+        }
     }
 
     @Override
     public boolean isAutoFocus() {
-        return false;
+        return isAutoFocus;
     }
 
     @Override
     public void setFlashMode(int flashMode) {
-
+        if (this.flashMode == flashMode) {
+            return;
+        }
+        this.flashMode = flashMode;
+        if (isCameraOpened()) {
+            backgroundHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    setFlashModeInternal(null);
+                }
+            });
+        }
     }
 
     @Override
     public int getFlashMode() {
-        return 0;
+        return flashMode;
     }
 
     @Override
     public void setZoom(float zoom) {
-
+        if (zoom == this.zoom || zoom > getMaxZoom() || zoom < 1.f) {
+            return;
+        }
+        this.zoom = zoom;
+        if (isCameraOpened()) {
+            backgroundHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    setZoomInternal(null);
+                }
+            });
+        }
     }
 
     @Override
     public float getZoom() {
-        return 0;
+        return zoom;
     }
 
     @Override
     public float getMaxZoom() {
-        return 0;
+        if(maxZoom == 0){
+            maxZoom = zoomRatios.get(zoomRatios.size()-1);
+        }
+        return maxZoom;
     }
 
     @Override
-    public Size getSize(int sizeFor) {
+    public Size getSize(@CameraConstant.SizeFor  int sizeFor) {
+        switch(sizeFor){
+            case CameraConstant.SIZE_FOR_PREVIEW:
+                return previewSize;
+            case CameraConstant.SIZE_FOR_PICTURE:
+                return pictureSize;
+            case CameraConstant.SIZE_FOR_VIDEO:
+                return videoSize;
+                default:
+                    break;
+        }
         return null;
     }
 
     @Override
     public SizeMap getSizes(int sizeFor) {
+        switch (sizeFor) {
+            case CameraConstant.SIZE_FOR_PREVIEW:
+                if (previewSizeMap == null) {
+                    previewSizeMap = CameraHelper.getSizeMapFromSizes(previewSizes);
+                }
+                return previewSizeMap;
+            case CameraConstant.SIZE_FOR_PICTURE:
+                if (pictureSizeMap == null) {
+                    pictureSizeMap = CameraHelper.getSizeMapFromSizes(pictureSizes);
+                }
+                return pictureSizeMap;
+            case CameraConstant.SIZE_FOR_VIDEO:
+                if (videoSizeMap == null) {
+                    videoSizeMap = CameraHelper.getSizeMapFromSizes(videoSizes);
+                }
+                return videoSizeMap;
+        }
         return null;
     }
 
     @Override
     public void setDisplayOrientation(int displayOrientation) {
-
+        if (this.displayOrientation == displayOrientation) {
+            return;
+        }
+        this.displayOrientation = displayOrientation;
+        if(isCameraOpened()){
+            Camera.Parameters parameters = camera.getParameters();
+            CameraHelper.onOrientationChanged(currentCameraId,displayOrientation,parameters);
+            camera.setParameters(parameters);
+            if(showingPreview){
+                camera.stopPreview();
+                showingPreview = false;
+            }
+            camera.setDisplayOrientation(CameraHelper.calDisplayOrientation(context,cameraFace,cameraFace ==
+                    CameraConstant.FACE_FRONT ? frontCameraOrientation : rearCameraOrientation));
+            if(!showingPreview){
+                camera.startPreview();
+                showingPreview=true;
+            }
+        }
     }
 
     @Override
     public void startVideoRecord(File file, CameraVideoListener cameraVideoListener) {
+            super.startVideoRecord(file,cameraVideoListener);
+            if(videoRecording){
+                return;
+            }
+            if(isCameraOpened()){
+                backgroundHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if(prepareVideoRecorder()){
+                            videoRecorder.start();
+                            videoRecording = true;
+                            notifyVideoRecordStart();
+                        }
+                    }
+                });
+            }
+    }
 
+
+    private boolean prepareVideoRecorder(){
+        videoRecorder = new MediaRecorder();
+        try{
+
+            videoRecorder.setCamera(camera);
+            //音频源和视频源
+            videoRecorder.setAudioSource(AudioSource.DEFAULT);
+            videoRecorder.setVideoSource(VideoSource.DEFAULT);
+
+            //输出文件格式
+            videoRecorder.setOutputFormat(camcorderProfile.fileFormat);
+            //设置视频帧率
+            videoRecorder.setVideoFrameRate(camcorderProfile.videoFrameRate);
+            videoRecorder.setVideoSize(videoSize.width,videoSize.height);
+            //设置编码率
+            videoRecorder.setVideoEncodingBitRate(camcorderProfile.videoBitRate);
+            videoRecorder.setVideoEncoder(camcorderProfile.videoCodec);
+
+            //设置音频编码率
+            videoRecorder.setAudioEncodingBitRate(camcorderProfile.audioBitRate);
+            //设置音频声道
+            videoRecorder.setAudioChannels(camcorderProfile.audioChannels);
+            //设置音频采样率
+            videoRecorder.setAudioSamplingRate(camcorderProfile.audioSampleRate);
+            videoRecorder.setAudioEncoder(camcorderProfile.audioCodec);
+
+            videoRecorder.setOutputFile(videoOutFile.toString());
+
+            //如果设置了视频文件大小
+            if (videoFileSize > 0) {
+                videoRecorder.setMaxFileSize(videoFileSize);
+                videoRecorder.setOnInfoListener(this);
+            }
+
+            //如果设置了视频文件最大时间长度
+            if (videoDuration > 0) {
+                videoRecorder.setMaxDuration(videoDuration);
+                videoRecorder.setOnInfoListener(this);
+            }
+
+            videoRecorder.setPreviewDisplay(cameraPreview.getSurface());
+            videoRecorder.prepare();
+            return true;
+        }catch (IllegalStateException error){
+            Logger.e(TAG, "IllegalStateException preparing MediaRecorder: " + error.getMessage());
+            notifyVideoRecordError(error);
+        }catch (IOException error) {
+            Logger.e(TAG, "IOException preparing MediaRecorder: " + error.getMessage());
+            notifyVideoRecordError(error);
+        }catch (Throwable error) {
+            Logger.e(TAG, "Error during preparing MediaRecorder: " + error.getMessage());
+            notifyVideoRecordError(error);
+        }
+        //如果出现了异常释放掉
+        releaseVideoRecorder();
+        return false;
     }
 
     @Override
     public void stopVideoRecord() {
-
+        if(videoRecording && isCameraOpened()){
+            backgroundHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    safeStopVideoRecorder();
+                    releaseVideoRecorder();
+                    videoRecording = false;
+                    notifyVideoRecordStop(videoOutFile);
+                }
+            });
+        }
     }
 
     @Override
-    public void startPreview() {
+    public void resumePreview() {
+        if(isCameraOpened()){
+            camera.startPreview();
+        }
+    }
 
+    @Override
+    public void closeCamera(CameraCloseListener cameraCloseListener) {
+        super.closeCamera(cameraCloseListener);
+        if(isCameraOpened()){
+            camera.setPreviewCallback(null);
+            camera.stopPreview();
+        }
+
+        showingPreview = false;
+        if(uiHandler != null){
+            uiHandler.removeCallbacksAndMessages(null);
+        }
+        if(backgroundHandler != null){
+            backgroundHandler.removeCallbacksAndMessages(null);
+        }
+        releaseCameraInternal();
+        notifyCameraClosed();
+    }
+
+    private void releaseCameraInternal(){
+        if(camera != null){
+            camera.release();
+            camera = null;
+            previewSize = null;
+            pictureSize = null;
+            videoSize = null;
+            maxZoom = 0;
+        }
     }
 }

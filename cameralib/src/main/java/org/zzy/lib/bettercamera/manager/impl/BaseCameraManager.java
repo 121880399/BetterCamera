@@ -12,6 +12,7 @@ import android.os.Process;
 
 import org.zzy.lib.bettercamera.bean.AspectRatio;
 import org.zzy.lib.bettercamera.bean.Size;
+import org.zzy.lib.bettercamera.bean.SizeMap;
 import org.zzy.lib.bettercamera.config.ConfigProvider;
 import org.zzy.lib.bettercamera.constant.CameraConstant;
 import org.zzy.lib.bettercamera.constant.MediaConstant;
@@ -109,11 +110,11 @@ public abstract class BaseCameraManager<T> implements CameraManager,MediaRecorde
     @CameraConstant.FlashMode int flashMode;
 
     /**
-     * 缩放比例
+     * 变焦比例
      */
     float zoom = 1.0f;
     /**
-     * 最大缩放比例
+     * 最大变焦比例
      */
     float maxZoom;
     /**
@@ -194,6 +195,36 @@ public abstract class BaseCameraManager<T> implements CameraManager,MediaRecorde
      * 设置camera录制的参数
      */
     CamcorderProfile camcorderProfile;
+
+    /**
+     * SizeMap类型的预览尺寸
+     */
+    SizeMap previewSizeMap;
+
+    /**
+     * SizeMap类型的照片尺寸
+     */
+    SizeMap pictureSizeMap;
+
+    /**
+     * SizeMap类型的视频尺寸
+     */
+    SizeMap videoSizeMap;
+
+    /**
+     * 显示方向
+     */
+    int displayOrientation;
+
+    /**
+     * video输出文件
+     */
+    File videoOutFile;
+
+    /**
+     * 是否正在录制视频
+     */
+    volatile boolean videoRecording;
 
     BaseCameraManager(CameraPreview cameraPreview) {
         this.cameraPreview = cameraPreview;
@@ -308,6 +339,13 @@ public abstract class BaseCameraManager<T> implements CameraManager,MediaRecorde
         }else if(MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED == what){
             onMaxFileSizeReached();
         }
+    }
+
+    @Override
+    public void startVideoRecord(File file, CameraVideoListener cameraVideoListener) {
+        this.videoOutFile = file;
+        this.cameraVideoListener = cameraVideoListener;
+
     }
     /*-----------------------------------protected methods-----------------------------------*/
 
