@@ -4,6 +4,7 @@ import android.content.Context;
 import android.hardware.Camera;
 import android.hardware.Camera.CameraInfo;
 import android.hardware.Camera.Parameters;
+import android.hardware.Camera.ShutterCallback;
 import android.media.MediaRecorder;
 import android.media.MediaRecorder.AudioSource;
 import android.media.MediaRecorder.VideoSource;
@@ -12,6 +13,7 @@ import android.support.annotation.Nullable;
 
 import com.sun.org.apache.bcel.internal.generic.RETURN;
 
+import org.zzy.lib.bettercamera.bean.AspectRatio;
 import org.zzy.lib.bettercamera.bean.Size;
 import org.zzy.lib.bettercamera.bean.SizeMap;
 import org.zzy.lib.bettercamera.config.ConfigProvider;
@@ -21,6 +23,7 @@ import org.zzy.lib.bettercamera.constant.MediaConstant;
 import org.zzy.lib.bettercamera.constant.PreviewConstant;
 import org.zzy.lib.bettercamera.listener.CameraCloseListener;
 import org.zzy.lib.bettercamera.listener.CameraOpenListener;
+import org.zzy.lib.bettercamera.listener.CameraPhotoListener;
 import org.zzy.lib.bettercamera.listener.CameraVideoListener;
 import org.zzy.lib.bettercamera.preview.CameraPreview;
 import org.zzy.lib.bettercamera.preview.CameraPreviewCallback;
@@ -382,6 +385,61 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
     }
 
     @Override
+    public void setPictureOutputSize(Size outputSize) {
+        super.setPictureOutputSize(outputSize);
+        if(isCameraOpened()){
+            adjustCameraParameters(true,false,false);
+        }
+    }
+
+    @Override
+    public void setPictureOutputAspectRatio(AspectRatio outputAspectRatio) {
+        super.setPictureOutputAspectRatio(outputAspectRatio);
+        if(isCameraOpened()){
+            adjustCameraParameters(true,false,false);
+        }
+    }
+
+    @Override
+    public void takePicture(CameraPhotoListener cameraPhotoListener) {
+        super.takePicture(cameraPhotoListener);
+        if(!isCameraOpened()){
+            notifyCameraCaptureFailed(new RuntimeException("Camera not open yet!"));
+            return;
+        }
+        if(isCameraOpened()){
+            backgroundHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    try{
+                        if(!takingPicture){
+                            takingPicture = true;
+                            camera.takePicture(voiceEnabled ? new ShutterCallback() {
+                                @Override
+                                public void onShutter() {
+
+                                }
+                            } : null ,null, new Camera.PictureCallback() {
+                                @Override
+                                public void onPictureTaken(byte[] data, Camera camera) {
+                                    takingPicture = false;
+                                    notifyCameraPictureTaken(data);
+                                }
+                            });
+                        }else{
+                            Logger.i(TAG, "takePicture : taking picture");
+                        }
+                    }catch (Exception e){
+                        takingPicture = false;
+                        Logger.e(TAG, "takePicture error : " + e);
+                        notifyCameraCaptureFailed(new RuntimeException(e));
+                    }
+                }
+            });
+        }
+    }
+
+    @Override
     public void setVoiceEnable(boolean voiceEnable) {
         if (voiceEnabled == voiceEnable) {
             return;
@@ -413,6 +471,17 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
     @Override
     public boolean isAutoFocus() {
         return isAutoFocus;
+    }
+
+    @Override
+    public void switchCamera(int cameraFace) {
+        super.switchCamera(cameraFace);
+        if(isCameraOpened()){
+            //关闭旧的camera
+            closeCamera(cameraCloseListener);
+            //打开新的camera
+            openCamera(cameraOpenListener);
+        }
     }
 
     @Override

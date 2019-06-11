@@ -225,6 +225,11 @@ public abstract class BaseCameraManager<T> implements CameraManager,MediaRecorde
      * 是否正在录制视频
      */
     volatile boolean videoRecording;
+    /**
+     * 是否正在拍照
+     */
+    volatile boolean takingPicture;
+
 
     BaseCameraManager(CameraPreview cameraPreview) {
         this.cameraPreview = cameraPreview;
@@ -285,6 +290,7 @@ public abstract class BaseCameraManager<T> implements CameraManager,MediaRecorde
             return;
         }
         this.cameraFace = cameraFace;
+        currentCameraId = cameraFace == CameraConstant.FACE_FRONT ? frontCameraId : rearCameraId;
     }
 
     @Override
