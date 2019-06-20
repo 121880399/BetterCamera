@@ -11,8 +11,6 @@ import android.media.MediaRecorder.VideoSource;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 
-import com.sun.org.apache.bcel.internal.generic.RETURN;
-
 import org.zzy.lib.bettercamera.bean.AspectRatio;
 import org.zzy.lib.bettercamera.bean.Size;
 import org.zzy.lib.bettercamera.bean.SizeMap;
@@ -191,7 +189,7 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
         Camera.Parameters parameters = camera.getParameters();
         //如果是照片，并且照片的尺寸为空，或者照片尺寸不为空强制计算尺寸
         if(mediaType == MediaConstant.TYPE_PICTURE && (pictureSize == null || forceCalculateSizes)){
-            pictureSize = cameraSizeCalculator.getPictureSize(pictureSizes,expectAspectRatio,expectPictureSize);
+            pictureSize = cameraSizeCalculator.getPictureSize(pictureSizes,expectAspectRatio, expectSize);
             previewSize = cameraSizeCalculator.getPicturePreviewSize(previewSizes,pictureSize);
             parameters.setPictureSize(pictureSize.width,pictureSize.height);
             notifyPictureSizeUpdated(pictureSize);
@@ -200,7 +198,7 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
                 camcorderProfile = CameraHelper.getCamcorderProfile(mediaQuality, currentCameraId);
             }
             if(videoSize == null || forceCalculateSizes){
-                videoSize = cameraSizeCalculator.getVideoSize(videoSizes, expectAspectRatio, expectPictureSize);
+                videoSize = cameraSizeCalculator.getVideoSize(videoSizes, expectAspectRatio, expectSize);
                 previewSize = cameraSizeCalculator.getVideoPreviewSize(previewSizes, videoSize);
                 notifyVideoSizeUpdated(previewSize);
             }

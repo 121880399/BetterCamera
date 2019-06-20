@@ -1,7 +1,6 @@
 package org.zzy.lib.bettercamera.manager.impl;
 
 import android.content.Context;
-import android.hardware.Camera;
 import android.media.CamcorderProfile;
 import android.media.MediaRecorder;
 import android.os.Build;
@@ -80,9 +79,9 @@ public abstract class BaseCameraManager<T> implements CameraManager,MediaRecorde
      */
     AspectRatio expectAspectRatio;
     /**
-     * 期望照片尺寸
+     * 期望尺寸
      */
-    Size expectPictureSize;
+    Size expectSize;
     /**
      * 预览尺寸
      */
@@ -295,7 +294,7 @@ public abstract class BaseCameraManager<T> implements CameraManager,MediaRecorde
 
     @Override
     public void setPictureOutputSize(Size outputSize) {
-        this.expectPictureSize = outputSize;
+        this.expectSize = outputSize;
     }
 
     @Override
