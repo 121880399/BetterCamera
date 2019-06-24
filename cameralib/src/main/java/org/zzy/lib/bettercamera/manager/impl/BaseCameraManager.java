@@ -293,12 +293,12 @@ public abstract class BaseCameraManager<T> implements CameraManager,MediaRecorde
     }
 
     @Override
-    public void setPictureOutputSize(Size outputSize) {
+    public void setExpectSize(Size outputSize) {
         this.expectSize = outputSize;
     }
 
     @Override
-    public void setPictureOutputAspectRatio(AspectRatio outputAspectRatio) {
+    public void setExpectAspectRatio(AspectRatio outputAspectRatio) {
         this.expectAspectRatio = outputAspectRatio;
     }
 

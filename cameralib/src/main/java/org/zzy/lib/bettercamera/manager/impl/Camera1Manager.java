@@ -383,16 +383,16 @@ public class Camera1Manager extends BaseCameraManager<Integer> {
     }
 
     @Override
-    public void setPictureOutputSize(Size outputSize) {
-        super.setPictureOutputSize(outputSize);
+    public void setExpectSize(Size outputSize) {
+        super.setExpectSize(outputSize);
         if(isCameraOpened()){
             adjustCameraParameters(true,false,false);
         }
     }
 
     @Override
-    public void setPictureOutputAspectRatio(AspectRatio outputAspectRatio) {
-        super.setPictureOutputAspectRatio(outputAspectRatio);
+    public void setExpectAspectRatio(AspectRatio outputAspectRatio) {
+        super.setExpectAspectRatio(outputAspectRatio);
         if(isCameraOpened()){
             adjustCameraParameters(true,false,false);
         }

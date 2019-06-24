@@ -1,6 +1,8 @@
 package org.zzy.lib.bettercamera.manager.impl;
 
 import android.annotation.SuppressLint;
+import android.content.Context;
+import android.graphics.Camera;
 import android.graphics.ImageFormat;
 import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
@@ -9,12 +11,19 @@ import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCaptureSession.StateCallback;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
+import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CameraMetadata;
 import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
+import android.hardware.camera2.params.StreamConfigurationMap;
+import android.media.Image;
 import android.media.ImageReader;
 import android.media.ImageReader.OnImageAvailableListener;
+import android.media.MediaActionSound;
+import android.media.MediaRecorder;
+import android.media.MediaRecorder.AudioSource;
+import android.media.MediaRecorder.VideoSource;
 import android.os.Build.VERSION_CODES;
 import android.support.annotation.IntDef;
 import android.support.annotation.NonNull;
@@ -22,6 +31,7 @@ import android.support.annotation.RequiresApi;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 
+import org.zzy.lib.bettercamera.bean.AspectRatio;
 import org.zzy.lib.bettercamera.bean.Size;
 import org.zzy.lib.bettercamera.bean.SizeMap;
 import org.zzy.lib.bettercamera.config.ConfigProvider;
@@ -29,14 +39,23 @@ import org.zzy.lib.bettercamera.config.calculator.CameraSizeCalculator;
 import org.zzy.lib.bettercamera.constant.CameraConstant;
 import org.zzy.lib.bettercamera.constant.MediaConstant;
 import org.zzy.lib.bettercamera.constant.PreviewConstant;
+import org.zzy.lib.bettercamera.listener.CameraCloseListener;
+import org.zzy.lib.bettercamera.listener.CameraOpenListener;
+import org.zzy.lib.bettercamera.listener.CameraPhotoListener;
+import org.zzy.lib.bettercamera.listener.CameraVideoListener;
 import org.zzy.lib.bettercamera.preview.CameraPreview;
 import org.zzy.lib.bettercamera.preview.CameraPreviewCallback;
 import org.zzy.lib.bettercamera.utils.CameraHelper;
 import org.zzy.lib.bettercamera.utils.Logger;
 
+import java.io.File;
+import java.io.IOException;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * @作者 ZhouZhengyi
@@ -76,6 +95,12 @@ public class Camera2Manager extends BaseCameraManager<String> implements OnImage
 
     private SurfaceHolder surfaceHolder;
 
+    private CameraManager cameraManager;
+
+    private StreamConfigurationMap frontStreamConfigurationMap;
+
+    private StreamConfigurationMap rearStreamConfigurationMap;
+
     public Camera2Manager(CameraPreview cameraPreview) {
         super(cameraPreview);
         cameraPreview.setCameraPreviewCallback(new CameraPreviewCallback() {
@@ -89,6 +114,7 @@ public class Camera2Manager extends BaseCameraManager<String> implements OnImage
     }
 
     private CaptureSessionCallback captureSessionCallback = new CaptureSessionCallback() {
+
 
         @Override
         void processCaptureResult(@NonNull CaptureResult result, int cameraPreviewState) {
@@ -142,13 +168,14 @@ public class Camera2Manager extends BaseCameraManager<String> implements OnImage
         }
     };
 
-    private void captureStillPicture(){
-        if(isCameraOpened()){
-            try{
+    private void captureStillPicture() {
+        if (isCameraOpened()) {
+            try {
                 CameraCharacteristics cameraCharacteristics = cameraFace == CameraConstant.FACE_FRONT ?
                                                               frontCameraCharacteristics : rearCameraCharacteristics;
 
-                final CaptureRequest.Builder captureBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
+                final CaptureRequest.Builder captureBuilder = cameraDevice
+                        .createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
                 captureBuilder.addTarget(imageReader.getSurface());
                 captureBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
                 captureBuilder.set(CaptureRequest.JPEG_ORIENTATION,
@@ -164,13 +191,126 @@ public class Camera2Manager extends BaseCameraManager<String> implements OnImage
                         Logger.d(TAG, "onCaptureCompleted: ");
                     }
                 }, null);
-            }catch (CameraAccessException e) {
+            } catch (CameraAccessException e) {
                 Logger.e(TAG, "Error during capturing picture");
                 notifyCameraCaptureFailed(e);
             }
-        }else {
+        } else {
             notifyCameraCaptureFailed(new RuntimeException("Camera not open."));
         }
+    }
+
+    @Override
+    public void initialize(Context context) {
+        super.initialize(context);
+        initCameraInfo(context);
+    }
+
+    private void initCameraInfo(Context context){
+        cameraManager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
+
+        long start = System.currentTimeMillis();
+        try{
+            assert cameraManager != null;
+            final String[] ids = cameraManager.getCameraIdList();
+            numberOfCameras = ids.length;
+            for(String id : ids){
+                final CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(id);
+                final Integer facing = characteristics.get(CameraCharacteristics.LENS_FACING);
+                if(facing != null && facing == CameraCharacteristics.LENS_FACING_FRONT){
+                    frontCameraId = id;
+                    Integer iFrontCameraOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+                    frontCameraOrientation = iFrontCameraOrientation == null ? 0 : frontCameraOrientation;
+                    frontCameraCharacteristics = characteristics;
+                }else if(facing != null && facing == CameraCharacteristics.LENS_FACING_BACK){
+                    rearCameraId = id;
+                    Integer iRearCameraOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+                    rearCameraOrientation = iRearCameraOrientation == null ? 0 : rearCameraOrientation;
+                    rearCameraCharacteristics = characteristics;
+                }
+            }
+        }catch (Exception e){
+            Logger.e(TAG, "initCameraInfo error " + e);
+        }
+        Logger.d(TAG, "initCameraInfo basic cost : " + (System.currentTimeMillis() - start) + " ms");
+
+        currentCameraId = cameraFace == CameraConstant.FACE_REAR ? rearCameraId : frontCameraId;
+    }
+
+    @Override
+    public void openCamera(CameraOpenListener cameraOpenListener) {
+        super.openCamera(cameraOpenListener);
+        backgroundHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                prepareCameraOutputs();
+                adjustCameraConfiguration(false);
+                try {
+                    cameraManager.openCamera(currentCameraId, new CameraDevice.StateCallback() {
+                        @Override
+                        public void onOpened(@NonNull CameraDevice camera) {
+                            Logger.d(TAG, "Camera opened.");
+                            cameraDevice = camera;
+                            if(cameraPreview.isAvailable()){
+                                createPreviewSession();
+                            }
+                            notifyCameraOpened();
+                        }
+
+                        @Override
+                        public void onDisconnected(@NonNull CameraDevice camera) {
+                            Logger.e(TAG, "Camera disconnected.");
+                            camera.close();
+                            cameraDevice = null;
+                            notifyCameraClosed();
+                        }
+
+                        @Override
+                        public void onError(@NonNull CameraDevice camera, int error) {
+                            Logger.e(TAG, "Camera open error : " + error);
+                            camera.close();
+                            cameraDevice = null;
+                            notifyCameraOpenError(new RuntimeException("Camera error : " + error));
+                        }
+                    },backgroundHandler);
+                }catch (Exception ex){
+                    Logger.e(TAG, "error : " + ex);
+                    notifyCameraOpenError(ex);
+                }
+            }
+        });
+    }
+
+    private void prepareCameraOutputs(){
+        boolean isFrontCamera = cameraFace == CameraConstant.FACE_FRONT;
+        long start = System.currentTimeMillis();
+        try{
+            final CameraCharacteristics characteristics = isFrontCamera ? frontCameraCharacteristics :
+                                                          rearCameraCharacteristics;
+            if(isFrontCamera && frontStreamConfigurationMap == null){
+                frontStreamConfigurationMap = characteristics.get(CameraCharacteristics
+                        .SCALER_STREAM_CONFIGURATION_MAP);
+            }else if(!isFrontCamera && rearStreamConfigurationMap == null){
+                rearStreamConfigurationMap = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+            }
+        }catch (Exception e){
+            Logger.e(TAG, "initCameraInfo error " + e);
+            notifyCameraOpenError(new RuntimeException(e));
+        }
+        Logger.d(TAG, "initCameraInfo get map cost : " + (System.currentTimeMillis() - start) + " ms");
+
+        start = System.currentTimeMillis();
+        try{
+            final StreamConfigurationMap  map = isFrontCamera ? frontStreamConfigurationMap :
+                                                rearStreamConfigurationMap;
+            previewSizes = ConfigProvider.getInstance().getSizes(map,cameraFace, CameraConstant.SIZE_FOR_PREVIEW);
+            pictureSizes = ConfigProvider.getInstance().getSizes(map,cameraFace,CameraConstant.SIZE_FOR_PICTURE);
+            videoSizes =  ConfigProvider.getInstance().getSizes(map,cameraFace,CameraConstant.SIZE_FOR_VIDEO);
+        }catch (Exception ex){
+            Logger.e(TAG, "error : " + ex);
+            notifyCameraOpenError(new RuntimeException(ex));
+        }
+        Logger.d(TAG, "prepareCameraOutputs cost : " + (System.currentTimeMillis() - start) + " ms");
     }
 
     /**
@@ -202,7 +342,8 @@ public class Camera2Manager extends BaseCameraManager<String> implements OnImage
 
     private void runPreCaptureSequence() {
         try {
-            previewRequestBuilder.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER, CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_START);
+            previewRequestBuilder.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER,
+                    CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_START);
             captureSessionCallback.setCameraPreviewState(CaptureSessionCallback.STATE_WAITING_PRE_CAPTURE);
             captureSession.capture(previewRequestBuilder.build(), captureSessionCallback, backgroundHandler);
         } catch (CameraAccessException e) {
@@ -282,6 +423,56 @@ public class Camera2Manager extends BaseCameraManager<String> implements OnImage
         }
     }
 
+    @Override
+    public void switchCamera(int cameraFace) {
+        super.switchCamera(cameraFace);
+        if(isCameraOpened()){
+            closeCamera(cameraCloseListener);
+            openCamera(cameraOpenListener);
+        }
+    }
+
+    @Override
+    public void closeCamera(CameraCloseListener cameraCloseListener) {
+        super.closeCamera(cameraCloseListener);
+        if(isCameraOpened()){
+            cameraDevice.close();
+            cameraDevice = null;
+        }
+        closePreviewSession();
+        closeImageReader();
+        releaseVideoRecorder();
+        releaseCameraInternal();
+        if (uiHandler != null) {
+            uiHandler.removeCallbacksAndMessages(null);
+        }
+        if (backgroundHandler != null) {
+            backgroundHandler.removeCallbacksAndMessages(null);
+        }
+        notifyCameraClosed();
+    }
+
+    private void closeImageReader() {
+        if (null != imageReader) {
+            imageReader.close();
+            imageReader = null;
+        }
+    }
+
+    private void releaseCameraInternal() {
+        previewSize = null;
+        pictureSize = null;
+        videoSize = null;
+        maxZoom = 0;
+    }
+
+    private void releaseTexture() {
+        if (null != surfaceTexture) {
+            surfaceTexture.release();
+            surfaceTexture = null;
+        }
+    }
+
     /**
      * 设置闪光灯模式
      */
@@ -351,24 +542,25 @@ public class Camera2Manager extends BaseCameraManager<String> implements OnImage
 
     /**
      * 调整相机配置
+     *
      * @param forceCalculate 是否强制
      */
-    private void adjustCameraConfiguration(boolean forceCalculate){
+    private void adjustCameraConfiguration(boolean forceCalculate) {
         Size oldPreviewSize = previewSize;
         CameraSizeCalculator cameraSizeCalculator = ConfigProvider.getInstance().getCameraSizeCalculator();
-        if(pictureSize == null || forceCalculate){
-            pictureSize = cameraSizeCalculator.getPictureSize(pictureSizes,expectAspectRatio, expectSize);
-            previewSize = cameraSizeCalculator.getPicturePreviewSize(previewSizes,pictureSize);
+        if (pictureSize == null || forceCalculate) {
+            pictureSize = cameraSizeCalculator.getPictureSize(pictureSizes, expectAspectRatio, expectSize);
+            previewSize = cameraSizeCalculator.getPicturePreviewSize(previewSizes, pictureSize);
             notifyPictureSizeUpdated(pictureSize);
 
-            imageReader = ImageReader.newInstance(pictureSize.width,pictureSize.height,ImageFormat.JPEG,2);
-            imageReader.setOnImageAvailableListener(this,backgroundHandler);
+            imageReader = ImageReader.newInstance(pictureSize.width, pictureSize.height, ImageFormat.JPEG, 2);
+            imageReader.setOnImageAvailableListener(this, backgroundHandler);
         }
 
-        if(mediaType == MediaConstant.TYPE_VIDEO && (videoSize == null || forceCalculate)){
-            camcorderProfile = CameraHelper.getCamcorderProfile(mediaQuality,currentCameraId);
-            videoSize = cameraSizeCalculator.getVideoSize(videoSizes,expectAspectRatio, expectSize);
-            previewSize = cameraSizeCalculator.getVideoPreviewSize(previewSizes,videoSize);
+        if (mediaType == MediaConstant.TYPE_VIDEO && (videoSize == null || forceCalculate)) {
+            camcorderProfile = CameraHelper.getCamcorderProfile(mediaQuality, currentCameraId);
+            videoSize = cameraSizeCalculator.getVideoSize(videoSizes, expectAspectRatio, expectSize);
+            previewSize = cameraSizeCalculator.getVideoPreviewSize(previewSizes, videoSize);
             notifyVideoSizeUpdated(videoSize);
         }
 
@@ -379,7 +571,7 @@ public class Camera2Manager extends BaseCameraManager<String> implements OnImage
 
     @Override
     public void setVoiceEnable(boolean voiceEnable) {
-        if(this.voiceEnabled == voiceEnabled){
+        if (this.voiceEnabled == voiceEnabled) {
             return;
         }
         this.voiceEnabled = voiceEnable;
@@ -396,40 +588,42 @@ public class Camera2Manager extends BaseCameraManager<String> implements OnImage
             return;
         }
         this.isAutoFocus = autoFocus;
-        if(isCameraOpened() && previewRequestBuilder != null){
+        if (isCameraOpened() && previewRequestBuilder != null) {
             setAutoFocusInternal();
             previewRequest = previewRequestBuilder.build();
-            if(captureSession != null){
+            if (captureSession != null) {
                 try {
-                    captureSession.setRepeatingRequest(previewRequest,captureSessionCallback,backgroundHandler);
+                    captureSession.setRepeatingRequest(previewRequest, captureSessionCallback, backgroundHandler);
                 } catch (CameraAccessException e) {
                     Logger.e(TAG, "setAutoFocus error : " + e);
                 }
-            }else{
+            } else {
                 Logger.i(TAG, "setAutoFocus captureSession is null.");
             }
-        }else {
+        } else {
             Logger.i(TAG, "setAutoFocus camera not open or previewRequestBuilder is null");
         }
     }
 
-    private void setAutoFocusInternal(){
-        if(isAutoFocus){
+    private void setAutoFocusInternal() {
+        if (isAutoFocus) {
             CameraCharacteristics cameraCharacteristics = cameraFace == CameraConstant.FACE_FRONT ?
-                                                                       frontCameraCharacteristics :
-                                                                       rearCameraCharacteristics;
+                                                          frontCameraCharacteristics :
+                                                          rearCameraCharacteristics;
             int[] modes = cameraCharacteristics.get(CameraCharacteristics.CONTROL_AWB_AVAILABLE_MODES);
-            if(modes == null || modes.length == 0 || (modes.length == 1 && modes[0] == CameraCharacteristics
-                    .CONTROL_AF_MODE_OFF)){
+            if (modes == null || modes.length == 0 || (modes.length == 1 && modes[0] == CameraCharacteristics
+                    .CONTROL_AF_MODE_OFF)) {
                 isAutoFocus = false;
-                previewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,CaptureRequest.CONTROL_AF_MODE_OFF);
-            }else if(mediaType == MediaConstant.TYPE_PICTURE){
-                previewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
-            }else if(mediaType == MediaConstant.TYPE_VIDEO){
-                previewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
+                previewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF);
+            } else if (mediaType == MediaConstant.TYPE_PICTURE) {
+                previewRequestBuilder
+                        .set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+            } else if (mediaType == MediaConstant.TYPE_VIDEO) {
+                previewRequestBuilder
+                        .set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
             }
-        }else{
-            previewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,CaptureRequest.CONTROL_AF_MODE_OFF);
+        } else {
+            previewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF);
         }
     }
 
@@ -440,27 +634,27 @@ public class Camera2Manager extends BaseCameraManager<String> implements OnImage
 
     @Override
     public void setFlashMode(int flashMode) {
-        if(this.flashMode == flashMode) {
+        if (this.flashMode == flashMode) {
             return;
         }
         this.flashMode = flashMode;
-        if(isCameraOpened() && previewRequestBuilder != null){
+        if (isCameraOpened() && previewRequestBuilder != null) {
             boolean succeed = setFlashModeInternal();
-            if(succeed){
+            if (succeed) {
                 previewRequest = previewRequestBuilder.build();
-                if(captureSession != null){
-                    try{
-                        captureSession.setRepeatingRequest(previewRequest,captureSessionCallback,backgroundHandler);
-                    }catch (CameraAccessException e){
+                if (captureSession != null) {
+                    try {
+                        captureSession.setRepeatingRequest(previewRequest, captureSessionCallback, backgroundHandler);
+                    } catch (CameraAccessException e) {
                         Logger.e(TAG, "setFlashMode error : " + e);
                     }
-                }else {
+                } else {
                     Logger.i(TAG, "setFlashMode captureSession is null.");
                 }
-            }else {
+            } else {
                 Logger.i(TAG, "setFlashMode failed.");
             }
-        }else {
+        } else {
             Logger.i(TAG, "setFlashMode camera not open or previewRequestBuilder is null");
         }
     }
@@ -476,23 +670,23 @@ public class Camera2Manager extends BaseCameraManager<String> implements OnImage
             return;
         }
         this.zoom = zoom;
-        if(isCameraOpened()){
+        if (isCameraOpened()) {
             boolean succeed = setZoomInternal();
-            if(succeed){
+            if (succeed) {
                 previewRequest = previewRequestBuilder.build();
-                if(captureSession != null){
+                if (captureSession != null) {
                     try {
-                        captureSession.setRepeatingRequest(previewRequest,captureSessionCallback,backgroundHandler);
+                        captureSession.setRepeatingRequest(previewRequest, captureSessionCallback, backgroundHandler);
                     } catch (CameraAccessException e) {
                         Logger.e(TAG, "setZoom error : " + e);
                     }
-                }else {
+                } else {
                     Logger.i(TAG, "setZoom captureSession is null.");
                 }
             } else {
                 Logger.i(TAG, "setZoom failed : setZoomInternal failed.");
             }
-        }else {
+        } else {
             Logger.i(TAG, "setZoom failed : camera not open.");
         }
     }
@@ -504,14 +698,14 @@ public class Camera2Manager extends BaseCameraManager<String> implements OnImage
 
     @Override
     public float getMaxZoom() {
-        if(maxZoom == 0){
+        if (maxZoom == 0) {
             CameraCharacteristics cameraCharacteristics = cameraFace == CameraConstant.FACE_FRONT ?
                                                           frontCameraCharacteristics :
                                                           rearCameraCharacteristics;
             Float fMaxZoom = cameraCharacteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM);
-            if(fMaxZoom == null){
+            if (fMaxZoom == null) {
                 maxZoom = 1.0f;
-            }else{
+            } else {
                 maxZoom = fMaxZoom;
             }
         }
@@ -519,16 +713,44 @@ public class Camera2Manager extends BaseCameraManager<String> implements OnImage
     }
 
     @Override
+    public void setExpectSize(Size outputSize) {
+        super.setExpectSize(outputSize);
+        if(isCameraOpened()){
+            backgroundHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    adjustCameraConfiguration(true);
+                    createPreviewSession();
+                }
+            });
+        }
+    }
+
+    @Override
+    public void setExpectAspectRatio(AspectRatio outputAspectRatio) {
+        super.setExpectAspectRatio(outputAspectRatio);
+        if(isCameraOpened()){
+            backgroundHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    adjustCameraConfiguration(true);
+                    createPreviewSession();
+                }
+            });
+        }
+    }
+
+    @Override
     public Size getSize(int sizeFor) {
-        switch(sizeFor){
+        switch (sizeFor) {
             case CameraConstant.SIZE_FOR_PREVIEW:
                 return previewSize;
             case CameraConstant.SIZE_FOR_PICTURE:
                 return pictureSize;
             case CameraConstant.SIZE_FOR_VIDEO:
                 return videoSize;
-                default:
-                    return null;
+            default:
+                return null;
         }
     }
 
@@ -566,17 +788,248 @@ public class Camera2Manager extends BaseCameraManager<String> implements OnImage
 
     @Override
     public void stopVideoRecord() {
+        if (videoRecording && isCameraOpened()) {
+            backgroundHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    closePreviewSession();
+                    safeStopVideoRecorder();
+                    releaseVideoRecorder();
+                    videoRecording = false;
+                    notifyVideoRecordStop(videoOutFile);
+                    if (voiceEnabled) {
+                        new MediaActionSound().play(MediaActionSound.STOP_VIDEO_RECORDING);
+                    }
+                    createPreviewSession();
+                }
+            });
+        }
+    }
 
+    @Override
+    public void takePicture(CameraPhotoListener cameraPhotoListener) {
+        super.takePicture(cameraPhotoListener);
+        backgroundHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    lockFocus();
+                    if (voiceEnabled) {
+                        new MediaActionSound().play(MediaActionSound.SHUTTER_CLICK);
+                    }
+                }catch (Exception e){
+                    notifyCameraCaptureFailed(e);
+                }
+            }
+        });
+    }
+
+    private void lockFocus(){
+        try{
+            previewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER,CameraMetadata.CONTROL_AF_TRIGGER_START);
+            captureSessionCallback.setCameraPreviewState(CaptureSessionCallback.STATE_WAITING_LOCK);
+            captureSession.capture(previewRequestBuilder.build(),captureSessionCallback,backgroundHandler);
+        }catch (Exception e){
+            Logger.e(TAG, "lockFocus : error during focus locking");
+        }
+    }
+
+    @Override
+    public void startVideoRecord(File file, CameraVideoListener cameraVideoListener) {
+        super.startVideoRecord(file, cameraVideoListener);
+        if(videoRecording){
+            return;
+        }
+        if(isCameraOpened()){
+            if(voiceEnabled){
+                new MediaActionSound().play(MediaActionSound.START_VIDEO_RECORDING);
+            }
+            backgroundHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    closePreviewSession();
+                    if(prepareVideoRecorder()){
+                        createRecordSession();
+                    }else{
+                        Logger.i(TAG, "startVideoRecord : failed when prepare video recorder.");
+                        notifyVideoRecordError(new RuntimeException("Failed when prepare video recorder."));
+                    }
+                }
+            });
+        }
+    }
+
+    private boolean prepareVideoRecorder(){
+        videoRecorder = new MediaRecorder();
+        try{
+            videoRecorder.setAudioSource(AudioSource.CAMCORDER);
+            videoRecorder.setVideoSource(VideoSource.SURFACE);
+
+            videoRecorder.setOutputFormat(camcorderProfile.fileFormat);
+            videoRecorder.setVideoFrameRate(camcorderProfile.videoFrameRate);
+            videoRecorder.setVideoSize(videoSize.width,videoSize.height);
+            videoRecorder.setVideoEncodingBitRate(camcorderProfile.videoBitRate);
+            videoRecorder.setVideoEncoder(camcorderProfile.videoCodec);
+
+            videoRecorder.setAudioEncodingBitRate(camcorderProfile.audioBitRate);
+            videoRecorder.setAudioChannels(camcorderProfile.audioChannels);
+            videoRecorder.setAudioSamplingRate(camcorderProfile.audioSampleRate);
+            videoRecorder.setAudioEncoder(camcorderProfile.audioCodec);
+
+
+            videoRecorder.setOutputFile(videoOutFile.toString());
+
+            if(videoFileSize > 0 ){
+                videoRecorder.setMaxFileSize(videoFileSize);
+                videoRecorder.setOnInfoListener(this);
+            }
+
+            if(videoDuration > 0 ){
+                videoRecorder.setMaxDuration(videoDuration);
+                videoRecorder.setOnInfoListener(this);
+            }
+
+            CameraCharacteristics cameraCharacteristics = cameraFace == CameraConstant.FACE_FRONT ? frontCameraCharacteristics
+                                                          : rearCameraCharacteristics;
+            videoRecorder.setOrientationHint(CameraHelper.getJpegOrientation(cameraCharacteristics,displayOrientation));
+            videoRecorder.setPreviewDisplay(cameraPreview.getSurface());
+            videoRecorder.prepare();
+            return true;
+        }catch (IllegalStateException error){
+            Logger.e(TAG, "IllegalStateException preparing MediaRecorder: " + error.getMessage());
+            notifyVideoRecordError(error);
+        }catch (IOException error) {
+            Logger.e(TAG, "IOException preparing MediaRecorder: " + error.getMessage());
+            notifyVideoRecordError(error);
+        } catch (Throwable error) {
+            Logger.e(TAG, "Error during preparing MediaRecorder: " + error.getMessage());
+            notifyVideoRecordError(error);
+        }
+
+        releaseVideoRecorder();
+        return false;
+    }
+
+    private void createRecordSession(){
+        final Runnable sessionCreationTask =new Runnable() {
+            @Override
+            public void run() {
+                try{
+                    final List<Surface> surfaces = new ArrayList<>();
+
+                    previewRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
+
+                    final Surface previewSurface = workingSurface;
+                    surfaces.add(previewSurface);
+                    previewRequestBuilder.addTarget(previewSurface);
+
+                    workingSurface = videoRecorder.getSurface();
+                    surfaces.add(previewSurface);
+                    previewRequestBuilder.addTarget(workingSurface);
+
+                    cameraDevice.createCaptureSession(surfaces,new CameraCaptureSession.StateCallback(){
+
+                        @Override
+                        public void onConfigured(@NonNull CameraCaptureSession session) {
+                            captureSession = session;
+
+                            previewRequestBuilder.set(CaptureRequest.CONTROL_MODE,CameraMetadata.CONTROL_MODE_AUTO);
+                            try{
+                                captureSession.setRepeatingRequest(previewRequestBuilder.build(),null,
+                                        backgroundHandler);
+                            }catch (Exception e){
+                                Logger.e(TAG, "videoRecorder.start(): " + e);
+                                notifyVideoRecordError(e);
+                            }
+
+                            try{
+                                videoRecorder.start();
+                                videoRecording = true;
+                                notifyVideoRecordStart();
+                            }catch (Exception e) {
+                                Logger.e(TAG, "videoRecorder.start(): " + e);
+                                notifyVideoRecordError(e);
+                            }
+                        }
+
+                        @Override
+                        public void onConfigureFailed(@NonNull CameraCaptureSession session) {
+                            Logger.i(TAG, "onConfigureFailed");
+                            notifyVideoRecordError(new RuntimeException("Video record configure failed."));
+                        }
+                    },backgroundHandler);
+                }catch (Exception e) {
+                    Logger.e(TAG, "startVideoRecord: " + e);
+                    notifyVideoRecordError(e);
+                }
+            }
+        };
+        if(cameraPreview.getPreviewType() == PreviewConstant.TEXTURE_VIEW){
+            final SurfaceTexture texture = Camera2Manager.this.surfaceTexture;
+            texture.setDefaultBufferSize(videoSize.width,videoSize.height);
+            sessionCreationTask.run();
+        }else if(cameraPreview.getPreviewType() == PreviewConstant.SURFACE_VIEW){
+            uiHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    SurfaceHolder surfaceHolder = Camera2Manager.this.surfaceHolder;
+                    surfaceHolder.setFixedSize(previewSize.width,previewSize.height);
+                    sessionCreationTask.run();
+                }
+            });
+        }
+    }
+
+    private void closePreviewSession() {
+        if (captureSession != null) {
+            captureSession.close();
+            try {
+                captureSession.abortCaptures();
+            } catch (CameraAccessException e) {
+                e.printStackTrace();
+                Logger.e(TAG, "closePreviewSession error : " + e);
+            } finally {
+                captureSession = null;
+            }
+        }
     }
 
     @Override
     public void resumePreview() {
+        if (isCameraOpened()) {
+            unlockFocus();
+        }
+    }
 
+    private void unlockFocus() {
+        try {
+            previewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_CANCEL);
+            captureSession.capture(previewRequestBuilder.build(), captureSessionCallback, backgroundHandler);
+            captureSessionCallback.setCameraPreviewState(CaptureSessionCallback.STATE_PREVIEW);
+            captureSession.setRepeatingRequest(previewRequest, captureSessionCallback, backgroundHandler);
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
     public void onImageAvailable(ImageReader reader) {
-
+        try {
+            try (Image image = reader.acquireNextImage()) {
+                ByteBuffer buffer = image.getPlanes()[0].getBuffer();
+                byte[] bytes = new byte[buffer.remaining()];
+                buffer.get(bytes);
+                notifyCameraPictureTaken(bytes);
+            } catch (Exception e) {
+                Logger.e(TAG, "onImageAvailable error" + e);
+                notifyCameraCaptureFailed(e);
+            }
+        }catch (Exception e){
+            Logger.e(TAG, "onImageAvailable error " + e);
+            notifyCameraCaptureFailed(e);
+        }finally {
+            unlockFocus();
+        }
     }
 
     private static abstract class CaptureSessionCallback extends CameraCaptureSession.CaptureCallback {

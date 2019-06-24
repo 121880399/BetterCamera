@@ -102,14 +102,14 @@ public interface CameraManager {
     float getMaxZoom();
 
     /**
-     * 设置照片输出大小
+     * 设置期望大小(图片，视频)
      */
-    void setPictureOutputSize(Size outputSize);
+    void setExpectSize(Size outputSize);
 
     /**
      * 设置照片输出的宽高比
      */
-    void setPictureOutputAspectRatio(AspectRatio outputAspectRatio);
+    void setExpectAspectRatio(AspectRatio outputAspectRatio);
 
     /**
      * 得到对应尺寸
