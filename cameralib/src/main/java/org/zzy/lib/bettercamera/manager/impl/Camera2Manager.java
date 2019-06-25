@@ -85,16 +85,28 @@ public class Camera2Manager extends BaseCameraManager<String> implements OnImage
      */
     private CameraCaptureSession captureSession;
 
+    /**
+     * 代表了一次捕获请求，用于描述捕获图片的各种参数设置，比如对焦模式、曝光模式...
+     */
     private CaptureRequest previewRequest;
 
+    /**
+     * 前置摄像头特性
+     */
     private CameraCharacteristics frontCameraCharacteristics;
 
+    /**
+     * 后置摄像头特性
+     */
     private CameraCharacteristics rearCameraCharacteristics;
 
     private SurfaceTexture surfaceTexture;
 
     private SurfaceHolder surfaceHolder;
 
+    /**
+     * 这是一个全新的系统管理器，专门用于检测系统摄像头、打开系统摄像头
+     */
     private CameraManager cameraManager;
 
     private StreamConfigurationMap frontStreamConfigurationMap;

@@ -50,4 +50,22 @@ public class AspectRatio {
         long temp = Double.doubleToLongBits(ratio());
         return (int) (temp ^ (temp >>> 32));
     }
+
+    public static AspectRatio parse(String s) {
+        int position = s.indexOf(':');
+        if (position == -1) {
+            throw new IllegalArgumentException("Malformed aspect ratio: " + s);
+        }
+        try {
+            int x = Integer.parseInt(s.substring(0, position));
+            int y = Integer.parseInt(s.substring(position + 1));
+            return AspectRatio.of(x, y);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Malformed aspect ratio: " + s, e);
+        }
+    }
+
+    public AspectRatio inverse() {
+        return AspectRatio.of(heightRatio, widthRatio);
+    }
 }
